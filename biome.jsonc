@@ -1,0 +1,196 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "root": true,
+  "extends": [
+    "ultracite/biome/core",
+    "ultracite/biome/react",
+    "ultracite/biome/next",
+    "ultracite/biome/drizzle",
+    "ultracite/biome/vitest",
+    "ultracite/biome/type-aware"
+  ],
+  "files": {
+    // Both are generated: drizzle-kit writes the migrations, and ops/docker/grafana/
+    // generate-dashboards.mjs writes the dashboards. Formatting them would make the committed
+    // files differ from what the generator produces.
+    "includes": ["!!packages/db/drizzle", "!!ops/docker/grafana/dashboards"]
+  },
+  // Ultracite defaults to 80 columns and ES5 trailing commas. The repo was written with 100 and
+  // "all", so keeping them keeps the migration diff small.
+  "formatter": { "lineWidth": 100 },
+  // Ultracite sets its own 80 columns for CSS and JSON, and writes YAML flow sequences as
+  // [ "a" ] with inner spaces. Match the rest of the repo: 100 columns, ["a"].
+  // Tailwind 4 directives (@theme, @utility, ...) in apps/web.
+  "css": { "formatter": { "lineWidth": 100 }, "parser": { "tailwindDirectives": true } },
+  "json": { "formatter": { "lineWidth": 100 } },
+  "yaml": { "formatter": { "lineWidth": 100, "bracketSpacing": false } },
+  "javascript": {
+    "formatter": { "trailingCommas": "all" },
+    // Nest injects through decorated constructor parameters: constructor(@Inject(X) x: X).
+    "parser": { "unsafeParameterDecoratorsEnabled": true }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        // Ultracite sorts package.json. Off here because it moves "types" ahead of the
+        // "@dovetalk/source" condition in the packages' "exports" maps. Conditions match in
+        // order, so that would make tsc and Vitest resolve to dist/*.d.ts instead of the source.
+        "useSortedPackageJson": "off",
+        "organizeImports": {
+          "level": "on",
+          "options": {
+            // Node built-ins, then third-party packages, then our workspace packages, then the
+            // web app's "@/" alias, then relative paths. One blank line between groups.
+            "groups": [
+              ":NODE:",
+              ":BLANK_LINE:",
+              [":PACKAGE:", "!@dovetalk/**"],
+              ":BLANK_LINE:",
+              "@dovetalk/**",
+              ":BLANK_LINE:",
+              ":ALIAS:",
+              ":BLANK_LINE:",
+              ":PATH:"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "overrides": [
+    {
+      // @playwright/test re-exports its types from the playwright package in a way Biome's import
+      // resolver cannot follow, so it reports real exports (Page, Browser, ...) as missing. The
+      // TypeScript check of the e2e files, which runs in CI, resolves them.
+      "includes": ["apps/web/e2e/**"],
+      "linter": { "rules": { "correctness": { "noUnresolvedImports": "off" } } }
+    },
+    {
+      // k6 runs this file in its own JavaScript runtime (not Node), which provides the "k6/*"
+      // modules and the globals __ENV, __VU and __ITER. They cannot be resolved from npm.
+      "includes": ["ops/loadtest/k6/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnresolvedImports": "off",
+            "noUndeclaredDependencies": "off",
+            "noUndeclaredVariables": "off"
+          },
+          "style": { "noDefaultExport": "off" },
+          "performance": { "useTopLevelRegex": "off" }
+        }
+      }
+    },
+    {
+      // Nest builds its dependency graph from constructor parameter types, so those imports must
+      // stay real (value) imports, and DI uses parameter properties and decorator-only classes.
+      // Scoped here, rather than extending Ultracite's nestjs preset, so the web app keeps the
+      // strict rules.
+      "includes": ["apps/api/**", "apps/worker/**", "packages/core/**"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noUselessConstructor": "off",
+            "noStaticOnlyClass": "off"
+          },
+          "style": {
+            "noParameterProperties": "off",
+            "noEnum": "off",
+            "useImportType": "off",
+            // Providers, guards and filters are classes because Nest injects and mocks them, and
+            // several methods implement an interface (ExceptionFilter.catch, CanActivate) without
+            // needing `this`. Turning them into statics or free functions would defeat both.
+            "useThisInClassMethods": "off",
+            // One file per controller's request classes (dto.ts), one per module's providers.
+            "noExcessiveClassesPerFile": "off"
+          },
+          "suspicious": {
+            // Service methods and overrides of Nest's async hooks are `async` on purpose, even
+            // when the body only returns a transaction's promise: a DomainError thrown before the
+            // first await then becomes a rejected promise, which the exception filter handles the
+            // same way as one thrown later.
+            "useAwait": "off"
+          }
+        }
+      }
+    },
+    {
+      // The seeded waveform generator is a 32-bit PRNG (mulberry32): it is bit arithmetic by
+      // definition. The web copy and the core copy must stay identical, and a test pins the output.
+      "includes": ["**/waveform.ts"],
+      "linter": { "rules": { "suspicious": { "noBitwiseOperators": "off" } } }
+    },
+    {
+      // apps/web is a working prototype whose UI has not been refactored yet.
+      // - noJsxPropsBind and noNestedTernary ask for rewrites of idiomatic React (useCallback
+      //   around every inline handler, no nested ternaries in JSX) with no React Compiler in the
+      //   build to make that pay off.
+      // - useExhaustiveDependencies and noExcessiveCognitiveComplexity are warnings until the UI is refactored.
+      //   Fixing the dependency arrays here would change when effects run, in code that tests
+      //   only lightly cover, and the components are due a rewrite anyway.
+      // - The rules below are off, not fixed, for the same reason: each one asks for a rewrite of
+      //   working prototype code that is due a rewrite. Turn them back on when the UI is rebuilt.
+      //   noForEach, useIterableCallbackReturn, noAssignInExpressions, noReturnAssign:
+      //     forEach with arrow callbacks, and one-line `x = y` callbacks in the mock server,
+      //     the socket, the realtime sync, the UI store and test setup.
+      //   noUnnecessaryConditions: defensive checks on values the types say are always set;
+      //     removing them means re-checking the API types.
+      //   noArrayIndexKey: fixed-length decorative lists (skeleton rows, waveform bars).
+      //   noLeakedRender, useDomQuerySelector, useDefaultSwitchClause, useErrorCause: style
+      //     rules about code that is due a rewrite.
+      //   useBaseline: CSS (scrollbar-width, scrollbar-color, ::selection) whose browser support
+      //     the prototype accepts.
+      //   useAwait, noEmptyBlockStatements, noConditionalExpect: the conformance harnesses
+      //     implement an async interface with no await, and the shared suite asserts inside
+      //     branches that depend on the backend under test.
+      "includes": ["apps/web/**"],
+      "linter": {
+        "rules": {
+          "performance": { "noJsxPropsBind": "off" },
+          "style": {
+            "noNestedTernary": "off",
+            "useDefaultSwitchClause": "off",
+            "useDomQuerySelector": "off",
+            "useErrorCause": "off"
+          },
+          "correctness": { "useExhaustiveDependencies": "warn" },
+          "complexity": { "noExcessiveCognitiveComplexity": "warn", "noForEach": "off" },
+          "suspicious": {
+            "noArrayIndexKey": "off",
+            "noAssignInExpressions": "off",
+            "noConditionalExpect": "off",
+            "noEmptyBlockStatements": "off",
+            "noLeakedRender": "off",
+            "noReturnAssign": "off",
+            "noUnnecessaryConditions": "off",
+            "useAwait": "off",
+            "useBaseline": "off",
+            "useIterableCallbackReturn": "off"
+          }
+        }
+      }
+    },
+    {
+      // Tests fail loudly on their own, so these rules only add noise there.
+      // - noNonNullAssertion: a missing value should throw inside the test, which `!` does.
+      // - noAwaitInLoops: steps run one after another on purpose, they share one account.
+      // - useTopLevelRegex, useNamedCaptureGroup: style rules for regexes in production code, not
+      //   for throwaway patterns inside assertions.
+      // - useExpect: supertest asserts with `.expect(status)`, which the rule cannot see.
+      // - noShadow: test callbacks reuse short names (a, b, user) from the enclosing test.
+      "includes": [
+        "**/*.test.{ts,tsx}",
+        "**/test/**",
+        "apps/web/src/lib/api/conformance/**",
+        "packages/testkit/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": { "noNonNullAssertion": "off", "useNamedCaptureGroup": "off" },
+          "performance": { "noAwaitInLoops": "off", "useTopLevelRegex": "off" },
+          "suspicious": { "useExpect": "off", "noShadow": "off" }
+        }
+      }
+    }
+  ]
+}

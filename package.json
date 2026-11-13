@@ -1,0 +1,40 @@
+{
+  "name": "dovetalk",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dovetalk: a chat app with a NestJS API, a background worker and a Next.js web client.",
+  "license": "MIT",
+  "packageManager": "pnpm@12.21.0",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:coverage": "pnpm -r --workspace-concurrency=1 --if-present test:coverage",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "prepare": "husky",
+    "lint:boundaries": "depcruise apps packages ops/loadtest --config .dependency-cruiser.cjs",
+    "build": "pnpm -r build",
+    "db:migrate": "pnpm -r --filter \"@dovetalk/db...\" build && node --env-file-if-exists=apps/api/.env packages/db/dist/migrate-cli.js",
+    "db:seed": "pnpm --filter @dovetalk/api db:seed"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.7",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@nestjs/websockets": "^12.5.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@vitest/coverage-v8": "5.1.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "dependency-cruiser": "^18.7.2",
+    "husky": "^9.1.7",
+    "jsdom": "^31.0.1",
+    "lint-staged": "^17.6.1",
+    "mermaid": "^12.3.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "ultracite": "8.2.0"
+  }
+}

@@ -1,0 +1,21 @@
+packages:
+  - apps/*
+  - packages/*
+  - ops/loadtest
+allowBuilds:
+  "@scarf/scarf": false
+  cpu-features: false
+  esbuild: false
+  msgpackr-extract: false
+  protobufjs: false
+  ssh2: false
+minimumReleaseAgeExclude:
+  - "@nestjs/common@12.5.0"
+  - "@nestjs/core@12.5.0"
+  - "@nestjs/platform-express@12.5.0"
+  - "@nestjs/testing@12.5.0"
+# dependency-cruiser reads TypeScript sources through the TypeScript API, which only 6.x has.
+packageExtensions:
+  dependency-cruiser:
+    dependencies:
+      typescript: "npm:@typescript/typescript6@^6.0.2"

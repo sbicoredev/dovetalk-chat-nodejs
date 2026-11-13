@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "rangeStrategy": "bump",
+  "packageRules": [
+    { "matchPackageNames": ["/^@nestjs//"], "groupName": "nest" },
+    { "matchPackageNames": ["/^@opentelemetry//"], "groupName": "opentelemetry" },
+    { "matchPackageNames": ["drizzle-orm", "drizzle-kit"], "groupName": "drizzle" },
+    {
+      "description": "Biome and Ultracite are exact-pinned and upgraded together, so new rules land in one PR.",
+      "matchPackageNames": ["@biomejs/biome", "ultracite"],
+      "groupName": "biome"
+    },
+    { "matchManagers": ["github-actions"], "groupName": "github actions" },
+    {
+      "description": "Docker images follow the major tags pinned in docker-compose.yml.",
+      "matchManagers": ["docker-compose", "dockerfile"],
+      "separateMajorMinor": true
+    }
+  ]
+}
