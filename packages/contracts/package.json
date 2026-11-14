@@ -1,0 +1,30 @@
+{
+  "name": "@dovetalk/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Dovetalk API contract: DTO types, error codes and shared constants.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@dovetalk/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary --coverage.include=src/**"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
