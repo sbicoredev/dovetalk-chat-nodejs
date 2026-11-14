@@ -1,0 +1,42 @@
+{
+  "name": "@dovetalk/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Drizzle schema, migrations and the Postgres client factory.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@dovetalk/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "drizzle"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary --coverage.include=src/**",
+    "db:generate": "pnpm --filter @dovetalk/contracts build && drizzle-kit generate",
+    "db:migrate": "pnpm build && node dist/migrate-cli.js"
+  },
+  "dependencies": {
+    "@dovetalk/contracts": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1",
+    "uuid": "^14.0.3"
+  },
+  "devDependencies": {
+    "@dovetalk/testkit": "workspace:*",
+    "@types/node": "^26.6.6",
+    "@types/pg": "latest",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "drizzle-kit": "^0.31.11",
+    "vitest": "^5.1.0"
+  }
+}
