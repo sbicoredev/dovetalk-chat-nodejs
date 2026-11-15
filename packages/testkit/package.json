@@ -1,0 +1,28 @@
+{
+  "name": "@dovetalk/testkit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Test helpers shared by every package: throwaway Postgres databases and Redis connections.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo \"no tests\""
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1169.0",
+    "ioredis": "^6.0.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "latest",
+    "@testcontainers/redis": "latest",
+    "@types/node": "^26.6.6",
+    "@types/pg": "latest",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "testcontainers": "^12.2.1"
+  }
+}
