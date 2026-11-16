@@ -1,0 +1,59 @@
+{
+  "name": "@dovetalk/telemetry",
+  "version": "0.0.0",
+  "private": true,
+  "description": "OpenTelemetry setup and metric helpers shared by the API and the worker.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@dovetalk/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./start": {
+      "@dovetalk/source": "./src/start.ts",
+      "types": "./dist/start.d.ts",
+      "default": "./dist/start.js"
+    },
+    "./testing": {
+      "@dovetalk/source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary --coverage.include=src/**"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/exporter-logs-otlp-proto": "^0.301.2",
+    "@opentelemetry/exporter-metrics-otlp-proto": "^0.301.2",
+    "@opentelemetry/exporter-trace-otlp-proto": "^0.301.2",
+    "@opentelemetry/instrumentation-express": "^0.73.0",
+    "@opentelemetry/instrumentation-http": "^0.301.2",
+    "@opentelemetry/instrumentation-ioredis": "^0.73.0",
+    "@opentelemetry/instrumentation-nestjs-core": "^0.72.1",
+    "@opentelemetry/instrumentation-pg": "^0.78.0",
+    "@opentelemetry/instrumentation-pino": "^0.71.0",
+    "@opentelemetry/instrumentation-socket.io": "^0.72.0",
+    "@opentelemetry/resources": "^3.1.1",
+    "@opentelemetry/sdk-logs": "^3.1.1",
+    "@opentelemetry/sdk-metrics": "^3.1.1",
+    "@opentelemetry/sdk-node": "^0.301.2",
+    "@opentelemetry/sdk-trace": "^3.1.1",
+    "import-in-the-middle": "^3.6.0"
+  }
+}
