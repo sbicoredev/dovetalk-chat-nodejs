@@ -1,0 +1,384 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  HUSKY: "0"
+
+jobs:
+  checks:
+    name: Lint, types, boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pnpm
+        run: npm install --global pnpm@12.21.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Biome resolves "@dovetalk/*" imports through each package's dist/, which tsc and Vitest
+      # do not need (they use the "@dovetalk/source" condition). Without a build, the
+      # noUnresolvedImports rule reports every workspace import as an error.
+      - run: pnpm --filter "./packages/*" build
+      - run: pnpm lint
+      - run: pnpm lint:boundaries
+      - run: pnpm typecheck
+
+  test:
+    # Includes the socket tests and the two-instance tests (two API apps sharing this Redis):
+    # they need nothing beyond the Postgres, Redis and S3 below. The whole API suite takes about
+    # a minute and a half, so 20 minutes is a guard against a hung socket, not a budget.
+    name: Tests
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:8
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      # Each test suite creates its own database on this server.
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      TEST_REDIS_URL: redis://localhost:6379
+      # Upload tests need an S3 server. It is started below, because it needs the key file from
+      # the checkout, which a service container cannot mount.
+      TEST_S3_ENDPOINT: http://localhost:8333
+      # Keep in step with S3_IMAGE in .env.example.
+      S3_IMAGE: chrislusf/seaweedfs:3.99
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start SeaweedFS (S3)
+        # The two flags are needed: every bucket takes 7 volumes and the default cap is 8, so a
+        # few test buckets end in "Not enough data nodes found" (docs/edge-cases.md, #55).
+        run: |
+          docker run -d --name s3 -p 127.0.0.1:8333:8333 \
+            -v "$PWD/ops/docker/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" \
+            "$S3_IMAGE" server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data \
+            -master.volumeSizeLimitMB=32 -volume.max=2000
+          # The S3 port answers 403 to an unsigned request once it is up.
+          for attempt in $(seq 1 60); do
+            if [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8333/)" = "403" ]; then exit 0; fi
+            sleep 2
+          done
+          docker logs s3
+          exit 1
+      - name: Install pnpm
+        run: npm install --global pnpm@12.21.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run the tests with coverage
+        run: pnpm test:coverage
+      # The load-test package uses Node's own test runner, so it is outside the coverage run.
+      - name: Run the load-test package's tests
+        run: pnpm --filter @dovetalk/loadtest test
+      - name: Keep the coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-lcov
+          path: "**/coverage/lcov.info"
+          if-no-files-found: ignore
+      - name: Send coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+      - name: Show the S3 logs
+        if: failure()
+        run: docker logs s3
+
+  conformance:
+    # Runs every area the real API implements: `realtime` (a socket for each test, against the one
+    # API container) and `bots`, which needs the worker container to answer.
+    name: API conformance
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    env:
+      # Compose starts the API and the worker (and Postgres, Redis, SeaweedFS for uploads, the
+      # migrations and the demo seed) from source. The API makes the storage bucket itself. The
+      # suite signs up one account per test, so the limits are raised.
+      COMPOSE_PROFILES: app
+      RATE_LIMIT_GLOBAL: "1000000"
+      RATE_LIMIT_LOGIN_IP: "1000000"
+      RATE_LIMIT_LOGIN_EMAIL: "1000000"
+      RATE_LIMIT_REGISTER: "1000000"
+      RATE_LIMIT_GUEST: "1000000"
+      RATE_LIMIT_REFRESH: "1000000"
+    steps:
+      - uses: actions/checkout@v7
+      - run: cp .env.example .env
+      - name: Start the API and the worker
+        run: docker compose up -d --build api worker
+      - name: Wait until the API is ready
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:3001/health/ready > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker compose ps --all
+          docker compose logs --no-color
+          exit 1
+      - name: Wait until the worker is ready
+        # The worker publishes no port, so ask from inside its container.
+        run: |
+          for attempt in $(seq 1 30); do
+            if docker compose exec -T worker node -e "fetch('http://127.0.0.1:3002/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"; then exit 0; fi
+            sleep 2
+          done
+          docker compose ps --all
+          docker compose logs --no-color worker
+          exit 1
+      - name: Install pnpm
+        run: npm install --global pnpm@12.21.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter "@dovetalk/web..."
+      - name: Run the conformance suite against the API
+        run: pnpm --filter @dovetalk/web test:conformance
+        env:
+          CONFORMANCE_BASE_URL: http://localhost:3001
+      - name: Show the API logs
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
+
+  e2e:
+    # Real browsers against the whole stack built from source: the web app, the API, the worker,
+    # Postgres, Redis and storage: sign-up and reload, two people chatting live, photos, files,
+    # forwarding, groups, the address book.
+    name: End-to-end (Playwright)
+    timeout-minutes: 25
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROFILES: app
+      # Each test signs up its own people, so sign-up and guest limits are raised.
+      RATE_LIMIT_GLOBAL: "1000000"
+      RATE_LIMIT_LOGIN_IP: "1000000"
+      RATE_LIMIT_LOGIN_EMAIL: "1000000"
+      RATE_LIMIT_REGISTER: "1000000"
+      RATE_LIMIT_GUEST: "1000000"
+      RATE_LIMIT_REFRESH: "1000000"
+    steps:
+      - uses: actions/checkout@v7
+      - run: cp .env.example .env
+      - name: Start the web app, the API and the worker
+        run: docker compose up -d --build web api worker
+      - name: Wait until the web app and the API are ready
+        run: |
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://localhost:3001/health/ready > /dev/null \
+              && curl -fsS http://localhost:3000/login > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker compose ps --all
+          docker compose logs --no-color
+          exit 1
+      - name: Install pnpm
+        run: npm install --global pnpm@12.21.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter "@dovetalk/web..."
+      - run: pnpm --filter @dovetalk/web exec playwright install --with-deps chromium
+      - name: Run the end-to-end tests
+        run: pnpm --filter @dovetalk/web test:e2e
+        env:
+          E2E_BASE_URL: http://localhost:3000
+      - name: Keep the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7
+      - name: Show the logs
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes
+
+  compose-config:
+    # The Compose file and the observability configs are not exercised by the other jobs unless a
+    # profile is started, so a typo would only show up on somebody's laptop. This checks them
+    # without starting anything. Image tags come from the Compose file, so there is one place to
+    # change them.
+    name: Compose and observability config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: cp .env.example .env
+      - name: Check every profile
+        run: |
+          docker compose config -q
+          docker compose --profile app config -q
+          docker compose --profile observability config -q
+          docker compose --profile app --profile observability config -q
+          docker compose --profile scale config -q
+      - name: Validate the nginx config with nginx
+        # nginx looks up the upstream's name when it starts, and the replicas do not exist here,
+        # so a stand-in name that resolves is put in its place for the check.
+        run: |
+          image=$(docker compose --profile scale config --images | grep nginx)
+          sed 's/server scale-api:3001/server localhost:3001/' ops/docker/nginx.conf > /tmp/nginx.conf
+          docker run --rm -v /tmp/nginx.conf:/etc/nginx/nginx.conf:ro "$image" nginx -t
+      - name: Validate the Collector config with the Collector
+        run: |
+          image=$(docker compose --profile observability config --images | grep opentelemetry-collector-contrib)
+          docker run --rm -v "$PWD/ops/docker/otel-collector.yaml:/etc/otelcol/config.yaml:ro" \
+            "$image" validate --config=/etc/otelcol/config.yaml
+      - name: Validate the Prometheus config and alert rules with promtool
+        run: |
+          image=$(docker compose --profile observability config --images | grep prom/prometheus)
+          docker run --rm --entrypoint promtool \
+            -v "$PWD/ops/docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+            -v "$PWD/ops/docker/alerts.yml:/etc/prometheus/alerts.yml:ro" \
+            "$image" check config /etc/prometheus/prometheus.yml
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: The committed dashboards are what the generator writes
+        run: |
+          node ops/docker/grafana/generate-dashboards.mjs
+          git diff --exit-code -- ops/docker/grafana/dashboards
+
+  docs:
+    # The README and docs carry diagrams and links that nothing else would notice breaking. The ER
+    # diagram is generated from the schema, and Mermaid blocks are parsed with Mermaid's own parser.
+    name: Docs, diagrams and links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pnpm
+        run: npm install --global pnpm@12.21.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter dovetalk
+      - name: The ER diagram matches the schema
+        run: node ops/scripts/gen-er-diagram.mjs --check
+      - name: Every Mermaid diagram parses
+        run: node ops/scripts/check-mermaid.mjs
+      # Offline: it checks links between files and the #anchors inside them. Links to other
+      # sites are not followed, so a dead external link is not caught here.
+      - name: Links between the docs resolve
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --include-fragments --no-progress README.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md 'docs/**/*.md' '.github/**/*.md'
+          fail: true
+
+  fresh-clone:
+    # What a new reader does first: clone, follow the README's quick start, open the app. Nothing
+    # is cached or pre-built, and the steps are the README's commands. It also pulls every image
+    # of the other profiles, which is the only place an image tag that does not exist would show up.
+    name: Fresh clone, README quick start
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Quick start, as the README gives it
+        run: |
+          cp .env.example .env
+          docker compose --profile app up -d --build
+      - name: Wait until the web app and the API are ready
+        run: |
+          for i in $(seq 1 90); do
+            if curl -sf http://localhost:3001/health/ready >/dev/null && curl -sf http://localhost:3000 >/dev/null; then
+              echo "ready after $((i * 2)) s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "The stack did not become ready."
+          exit 1
+      - name: A guest signs in and a bot answers
+        run: API_URL=http://localhost:3001 node ops/scripts/smoke.mjs
+      - name: The demo account from the README can sign in
+        run: |
+          curl -sf -X POST http://localhost:3001/auth/login \
+            -H 'content-type: application/json' \
+            -d '{"email":"demo@dovetalk.app","password":"dovetalk123"}' >/dev/null
+      - name: Pull the images of the scale and observability profiles
+        run: docker compose --profile scale --profile observability pull --ignore-buildable
+      - name: Show the logs
+        if: failure()
+        run: docker compose --profile app logs --tail=200
+      - name: Stop the stack
+        if: always()
+        run: docker compose --profile app down --volumes
+
+  build:
+    name: Build and Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pnpm
+        run: npm install --global pnpm@12.21.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the API image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          tags: dovetalk-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+      - name: Build the worker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          push: false
+          tags: dovetalk-worker:ci
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,scope=worker,mode=max
+      - name: Build the web image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          tags: dovetalk-web:ci
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max

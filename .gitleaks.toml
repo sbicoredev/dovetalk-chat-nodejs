@@ -1,0 +1,8 @@
+# Secret scanning (gitleaks). Default rules, plus one narrow allowance.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "An example access token shown in the OpenAPI documentation. Its payload is a truncated id and its signature is 12 characters, so it can never verify."
+targetRules = ["jwt"]
+paths = ['''apps/api/src/docs/models\.ts''']

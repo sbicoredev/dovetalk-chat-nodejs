@@ -1,0 +1,103 @@
+name: Load test
+
+# A short run of the scale-out stack: 3 API replicas and 2 workers behind nginx, a few hundred
+# sockets, every message crossing instances, then one replica killed mid-run. It is a smoke test
+# of the scaling claims (nothing lost or duplicated, clients come back), not a benchmark: shared
+# runners are far too noisy for latency numbers, so only the counts gate. The full run, at the N
+# in docs/scaling.md, is started by hand from the Actions tab.
+on:
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "apps/worker/**"
+      - "packages/core/**"
+      - "packages/db/**"
+      - "ops/loadtest/**"
+      - "ops/docker/nginx.conf"
+      - "docker-compose.yml"
+  workflow_dispatch:
+    inputs:
+      pairs:
+        description: "Pairs of people (sockets = 2 x pairs)"
+        default: "1000"
+      duration:
+        description: "Seconds of sending"
+        default: "60"
+      rate:
+        description: "Messages per second per pair"
+        default: "0.1"
+
+concurrency:
+  group: loadtest-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  HUSKY: "0"
+  PAIRS: ${{ inputs.pairs || '50' }}
+  DURATION: ${{ inputs.duration || '20' }}
+  RATE: ${{ inputs.rate || '0.2' }}
+
+jobs:
+  loadtest:
+    name: Scale-out smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_PROFILES: scale
+    steps:
+      - uses: actions/checkout@v7
+      - run: cp .env.example .env
+      - name: Start the scale profile
+        run: docker compose up -d --build
+      - name: Wait until the balancer and every replica answer
+        run: |
+          for attempt in $(seq 1 90); do
+            ok=0
+            for port in 3101 3102 3103; do
+              curl -fsS "http://localhost:$port/health/ready" > /dev/null && ok=$((ok + 1))
+            done
+            if [ "$ok" = 3 ] && curl -fsS http://localhost:8080/health/ready > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker compose ps --all
+          docker compose logs --no-color
+          exit 1
+      - name: Install pnpm
+        run: npm install --global pnpm@12.21.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter "@dovetalk/loadtest..."
+      - name: Make the people
+        run: pnpm --filter @dovetalk/loadtest provision --base-url http://localhost:8080 --pairs "$PAIRS" --out "$RUNNER_TEMP/fixture.json"
+      - name: Cross-instance fan-out, nothing lost or duplicated
+        run: |
+          pnpm --filter @dovetalk/loadtest fanout --strict \
+            --fixture "$RUNNER_TEMP/fixture.json" --pairs "$PAIRS" \
+            --targets http://localhost:3101,http://localhost:3102,http://localhost:3103 \
+            --duration "$DURATION" --rate "$RATE" --out "$RUNNER_TEMP/fanout.json"
+      - name: Kill a replica mid-run, clients come back and catch up
+        run: |
+          pnpm --filter @dovetalk/loadtest fanout --strict \
+            --fixture "$RUNNER_TEMP/fixture.json" --pairs "$PAIRS" \
+            --base-url http://localhost:8080 \
+            --duration "$DURATION" --rate "$RATE" --grace 15 \
+            --chaos-cmd "$PWD/ops/loadtest/chaos/kill-api.sh 2" --chaos-at 8 \
+            --out "$RUNNER_TEMP/chaos.json"
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: loadtest-results
+          path: ${{ runner.temp }}/*.json
+          retention-days: 14
+      - name: Show the logs
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes

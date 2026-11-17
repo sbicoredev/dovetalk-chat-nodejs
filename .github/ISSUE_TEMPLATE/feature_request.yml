@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest something that is not built
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [docs/roadmap.md](https://github.com/OWNER/dovetalk/blob/main/docs/roadmap.md) first. It lists what is known to be missing.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you build?
+      description: Rough is fine. Say what changes in the API contract, if anything.
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Can you help?
+      options:
+        - label: I would like to work on this
