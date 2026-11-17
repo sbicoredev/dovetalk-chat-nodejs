@@ -1,0 +1,23 @@
+name: Release
+
+# release-please reads the Conventional Commits on main and keeps one pull request open that bumps the
+# version and writes CHANGELOG.md. Merging that pull request creates the tag and the GitHub release.
+# See "Releases" in CONTRIBUTING.md.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    name: Release pull request
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

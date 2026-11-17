@@ -32,8 +32,8 @@ jobs:
         run: ./gitleaks git --redact --no-banner --config .gitleaks.toml .
 
   audit:
-    # Production dependencies only. The advisories that remain are in development tooling
-    # (see docs/pull-requests/release-1.0.md) and are not shipped in any image.
+    # Production dependencies only. Development tooling is not checked here, because none of it is
+    # shipped in an image.
     name: Dependency audit (production)
     runs-on: ubuntu-latest
     steps:
