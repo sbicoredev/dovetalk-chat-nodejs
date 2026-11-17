@@ -1,0 +1,378 @@
+# Local infrastructure for Dovetalk.
+#
+#   docker compose up -d                  Postgres, Redis and S3-compatible storage
+#   docker compose --profile app up -d    ...plus the web app, the API and the worker, built from
+#                                         source. Open http://localhost:3000.
+#                                         (The worker answers for the bots: without it they stay quiet.)
+#                                         Migrations run first, then the optional demo seed.
+#                                         The API makes the storage bucket when it starts.
+#
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 \
+#     docker compose --profile app --profile observability up -d
+#                                         ...plus the OpenTelemetry Collector, Tempo, Prometheus, Loki
+#                                         and Grafana (http://localhost:3030, no login), with the API
+#                                         and the worker sending traces, metrics and logs to them.
+#                                         Without the endpoint the apps send nothing.
+#
+#   docker compose --profile scale up -d --build
+#                                         Scale-out: nginx (http://localhost:8080) in front of 3 API
+#                                         replicas, and 2 worker replicas. The replicas are also
+#                                         published one by one on 3101-3103 (the load tests use
+#                                         them). See docs/scaling.md. The `scale` and `app`
+#                                         profiles use the same ports and database: run one.
+#
+# Ports bind to 127.0.0.1 so databases are not reachable from the local network.
+# Passwords here are for local development only.
+name: dovetalk
+
+# What the API and the worker need to reach file storage. The key pair is the one in
+# ops/docker/seaweedfs-s3.json (local use only). Signed links go to the browser, so they use the
+# published port on localhost, while the servers talk to the service name.
+x-storage: &storage
+  S3_ENDPOINT: http://s3:8333
+  S3_PUBLIC_ENDPOINT: http://localhost:${S3_PORT:-8333}
+  S3_REGION: us-east-1
+  S3_BUCKET: dovetalk
+  S3_ACCESS_KEY_ID: dovetalk
+  S3_SECRET_ACCESS_KEY: dovetalk-secret
+  S3_FORCE_PATH_STYLE: "true"
+
+# The API puts jobs in Redis and the worker takes them out, so both must use the same prefix.
+# Change it only to share one Redis between several deployments.
+x-queues: &queues
+  QUEUE_PREFIX: ${QUEUE_PREFIX:-dovetalk}
+
+# Telemetry settings the API and the worker share.
+#
+# OTEL_EXPORTER_OTLP_ENDPOINT is EMPTY BY DEFAULT, so the apps send nothing and nothing is exported,
+# even with `--profile observability` running. That is a decision (docs/adr/0012-opentelemetry-stack.md),
+# made with measurements: a missing Collector is silent, but telemetry is not cheap. It costs about
+# 1.5x the API's CPU per message with a Collector and about 1.3x with none (about 98 spans and the log
+# records per message), and a default of "on" would charge that to everyone who runs `--profile app`,
+# the CI conformance and end-to-end jobs included. To see Grafana, give the apps the endpoint:
+#
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 \
+#     docker compose --profile app --profile observability up -d
+#
+# or put that variable in .env. TELEMETRY_ENABLED=false switches telemetry off even when an endpoint
+# is set. For Grafana Cloud, put its OTLP endpoint and headers in .env instead of the Collector's.
+x-telemetry: &telemetry
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+  OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+  OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:-10000}
+  OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER:-parentbased_always_on}
+  OTEL_TRACES_SAMPLER_ARG: ${OTEL_TRACES_SAMPLER_ARG:-}
+  TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-}
+  TELEMETRY_EXPORT_COOLDOWN_MS: ${TELEMETRY_EXPORT_COOLDOWN_MS:-}
+  OTEL_BSP_MAX_QUEUE_SIZE: ${OTEL_BSP_MAX_QUEUE_SIZE:-}
+  OTEL_BLRP_MAX_QUEUE_SIZE: ${OTEL_BLRP_MAX_QUEUE_SIZE:-}
+
+x-api-environment: &api-environment
+  <<: [*storage, *queues, *telemetry]
+  # The API makes the bucket and waits up to a minute for the store to come up.
+  S3_CREATE_BUCKET: "true"
+  NODE_ENV: production
+  DATABASE_URL: postgres://${POSTGRES_USER:-dovetalk}:${POSTGRES_PASSWORD:-dovetalk}@postgres:5432/${POSTGRES_DB:-dovetalk}
+  REDIS_URL: redis://redis:6379/0
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+  SWAGGER_ENABLED: "true"
+  JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env, see .env.example}
+  # Plain http on localhost. A real deployment serves https and keeps the default (true).
+  COOKIE_SECURE: "false"
+  # The browser reaches the API through the web app's /api path, so that is where the refresh
+  # cookie must be sent. The web app is one proxy in front of the API: trust its forwarded
+  # address, so rate limits see the visitor and not the web container.
+  COOKIE_PATH: /api/auth
+  TRUST_PROXY: "1"
+  # Empty means "use the default". Raise these to run the conformance suite, which signs up
+  # one account per test.
+  RATE_LIMIT_GLOBAL: ${RATE_LIMIT_GLOBAL:-}
+  RATE_LIMIT_LOGIN_IP: ${RATE_LIMIT_LOGIN_IP:-}
+  RATE_LIMIT_LOGIN_EMAIL: ${RATE_LIMIT_LOGIN_EMAIL:-}
+  RATE_LIMIT_REGISTER: ${RATE_LIMIT_REGISTER:-}
+  RATE_LIMIT_GUEST: ${RATE_LIMIT_GUEST:-}
+  RATE_LIMIT_REFRESH: ${RATE_LIMIT_REFRESH:-}
+  # Realtime presence. Empty means "use the default" (15 s, 45 s, 5 s, 1 s). The lifetime
+  # must be at least twice the heartbeat.
+  PRESENCE_HEARTBEAT_MS: ${PRESENCE_HEARTBEAT_MS:-}
+  PRESENCE_SOCKET_TTL_MS: ${PRESENCE_SOCKET_TTL_MS:-}
+  PRESENCE_OFFLINE_DEBOUNCE_MS: ${PRESENCE_OFFLINE_DEBOUNCE_MS:-}
+  PRESENCE_SWEEP_MS: ${PRESENCE_SWEEP_MS:-}
+  # Bots answer through jobs that the worker runs. Set false to run the API without a worker.
+  BOT_REPLIES_ENABLED: ${BOT_REPLIES_ENABLED:-true}
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dovetalk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dovetalk}
+      POSTGRES_DB: ${POSTGRES_DB:-dovetalk}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Postgres 18 images keep data in a versioned folder under /var/lib/postgresql.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8
+    # BullMQ needs noeviction: evicting a queue key would silently drop jobs.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # MinIO's community edition stopped shipping images in 2025, so local object storage is
+  # SeaweedFS, which speaks the S3 API with signed URLs. See docs/adr/0005-dependency-policy.md.
+  s3:
+    image: ${S3_IMAGE:?Set S3_IMAGE in .env, see .env.example}
+    # Every bucket takes 7 volumes and the default cap is 8. The flags give room for more buckets
+    # and keep volumes small (docs/edge-cases.md, #55).
+    command:
+      - server
+      - -s3
+      - -s3.config=/etc/seaweedfs/s3.json
+      - -dir=/data
+      - -master.volumeSizeLimitMB=32
+      - -volume.max=2000
+    ports:
+      - "127.0.0.1:${S3_PORT:-8333}:8333"
+    volumes:
+      - s3-data:/data
+      - ./ops/docker/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+
+  # One-shot jobs that use the API image. The API starts only after both have finished.
+  migrate:
+    profiles: ["app", "scale"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: dovetalk-api:local
+    command: ["node", "node_modules/@dovetalk/db/dist/migrate-cli.js"]
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-dovetalk}:${POSTGRES_PASSWORD:-dovetalk}@postgres:5432/${POSTGRES_DB:-dovetalk}
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  # Does nothing unless SEED_DEMO_ACCOUNT is true.
+  seed:
+    profiles: ["app", "scale"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: dovetalk-api:local
+    command: ["node", "dist/cli/seed.js"]
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-dovetalk}:${POSTGRES_PASSWORD:-dovetalk}@postgres:5432/${POSTGRES_DB:-dovetalk}
+      SEED_DEMO_ACCOUNT: ${SEED_DEMO_ACCOUNT:-false}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+
+  api: &api-service
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: dovetalk-api:local
+    environment: *api-environment
+    ports:
+      - "127.0.0.1:${API_PORT:-3001}:3001"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      s3: {condition: service_started}
+      migrate: {condition: service_completed_successfully}
+      seed: {condition: service_completed_successfully}
+
+  # The web app, built for the real API. The browser calls the API through this app's /api path
+  # (so the sign-in cookie is first-party) and opens the socket straight on the API's published
+  # port. Both addresses are put into the build: see apps/web/Dockerfile.
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api
+        NEXT_PUBLIC_WS_URL: http://localhost:${API_PORT:-3001}
+        API_PROXY_TARGET: http://api:3001
+    image: dovetalk-web:local
+    ports:
+      # Keep 3000: the API only accepts browser requests from http://localhost:3000 (CORS_ORIGINS).
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api: {condition: service_started}
+
+  # Answers for the bots and does the housekeeping (expired guests and notes, orphan uploads, old
+  # refresh tokens). It has no published port and no fixed name, so it scales:
+  #   docker compose --profile app up -d --scale worker=2
+  # Each job runs once however many replicas there are.
+  worker: &worker-service
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    image: dovetalk-worker:local
+    environment:
+      <<: [*storage, *queues, *telemetry]
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-dovetalk}:${POSTGRES_PASSWORD:-dovetalk}@postgres:5432/${POSTGRES_DB:-dovetalk}
+      REDIS_URL: redis://redis:6379/0
+      # Empty means "use the default" (25 jobs at once, and the schedules in apps/worker/.env.example).
+      BOT_REPLY_CONCURRENCY: ${BOT_REPLY_CONCURRENCY:-}
+      CLEANUP_GUESTS_EVERY_MS: ${CLEANUP_GUESTS_EVERY_MS:-}
+      CLEANUP_STATUSES_EVERY_MS: ${CLEANUP_STATUSES_EVERY_MS:-}
+      CLEANUP_ATTACHMENTS_EVERY_MS: ${CLEANUP_ATTACHMENTS_EVERY_MS:-}
+      CLEANUP_TOKENS_EVERY_MS: ${CLEANUP_TOKENS_EVERY_MS:-}
+      ORPHAN_ATTACHMENT_AGE_MS: ${ORPHAN_ATTACHMENT_AGE_MS:-}
+      CLEANUP_BATCH_SIZE: ${CLEANUP_BATCH_SIZE:-}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      s3: {condition: service_started}
+
+  # ---- Scale-out (profile "scale") -------------------------------------------------------------
+  # The same images as `app`, run as several replicas behind nginx. Nothing here is special to the
+  # code: the API keeps no state in memory that another instance needs (sessions are tokens,
+  # presence and events go through Redis, jobs through BullMQ), which is what docs/scaling.md shows.
+  # Rate limits are raised because a load test signs up thousands of people from one address.
+  # Do not use these defaults on the internet.
+  scale-api:
+    <<: *api-service
+    profiles: ["scale"]
+    environment:
+      <<: *api-environment
+      RATE_LIMIT_GLOBAL: ${RATE_LIMIT_GLOBAL:-10000000}
+      RATE_LIMIT_LOGIN_IP: ${RATE_LIMIT_LOGIN_IP:-10000000}
+      RATE_LIMIT_LOGIN_EMAIL: ${RATE_LIMIT_LOGIN_EMAIL:-10000000}
+      RATE_LIMIT_REGISTER: ${RATE_LIMIT_REGISTER:-10000000}
+      RATE_LIMIT_GUEST: ${RATE_LIMIT_GUEST:-10000000}
+      RATE_LIMIT_REFRESH: ${RATE_LIMIT_REFRESH:-10000000}
+      # Connections per process. Total = this x (API replicas + worker replicas) and must stay
+      # below Postgres's max_connections (100 by default): 5 x 10 = 50 here.
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      LOG_LEVEL: ${LOG_LEVEL:-warn}
+    deploy:
+      replicas: ${API_REPLICAS:-3}
+    # One host port per replica, from this range, so a test can talk to a chosen instance. The
+    # range must have at least as many ports as there are replicas.
+    ports:
+      - "127.0.0.1:${API_DIRECT_PORTS:-3101-3103}:3001"
+
+  scale-worker:
+    <<: *worker-service
+    profiles: ["scale"]
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+
+  # The load balancer. WebSocket upgrade, least connections, no sticky sessions: see
+  # ops/docker/nginx.conf for why none are needed.
+  lb:
+    profiles: ["scale"]
+    image: ${NGINX_IMAGE:-nginx:1.30-alpine}
+    volumes:
+      - ./ops/docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "127.0.0.1:${LB_PORT:-8080}:8080"
+    depends_on:
+      scale-api: {condition: service_healthy}
+
+  # ---- Observability (profile "observability") -------------------------------------------------
+  # Image tags can be changed in .env. See docs/observability.md.
+  otel-collector:
+    profiles: ["observability"]
+    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector-contrib:0.165.0}
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./ops/docker/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # So tools on the host (pnpm dev) can send too.
+      - "127.0.0.1:4318:4318"
+    depends_on: [tempo, prometheus, loki]
+
+  tempo:
+    profiles: ["observability"]
+    image: ${TEMPO_IMAGE:-grafana/tempo:3.1.1}
+    # Tempo 3 splits into components. One process runs them all, which is what this setup wants.
+    command: ["-config.file=/etc/tempo.yaml", "-target=all"]
+    volumes:
+      - ./ops/docker/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+
+  prometheus:
+    profiles: ["observability"]
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.16.0}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      # The Collector writes metrics here. Exemplars are what link a latency point to a trace.
+      - --web.enable-remote-write-receiver
+      - --enable-feature=exemplar-storage
+      - --storage.tsdb.retention.time=24h
+    volumes:
+      - ./ops/docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/docker/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  loki:
+    profiles: ["observability"]
+    image: ${LOKI_IMAGE:-grafana/loki:3.7.10}
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./ops/docker/loki.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+
+  grafana:
+    profiles: ["observability"]
+    image: ${GRAFANA_IMAGE:-grafana/grafana:13.3.1}
+    environment:
+      # Local use only: no login, everybody is an admin.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./ops/docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3030:3000"
+    depends_on: [prometheus, tempo, loki]
+
+  postgres-exporter:
+    profiles: ["observability"]
+    image: ${POSTGRES_EXPORTER_IMAGE:-quay.io/prometheuscommunity/postgres-exporter:v0.20.1}
+    environment:
+      DATA_SOURCE_NAME: postgres://${POSTGRES_USER:-dovetalk}:${POSTGRES_PASSWORD:-dovetalk}@postgres:5432/${POSTGRES_DB:-dovetalk}?sslmode=disable
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  redis-exporter:
+    profiles: ["observability"]
+    image: ${REDIS_EXPORTER_IMAGE:-oliver006/redis_exporter:v1.97.0}
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis: {condition: service_healthy}
+
+volumes:
+  postgres-data:
+  redis-data:
+  s3-data:
+  tempo-data:
+  prometheus-data:
+  loki-data:

@@ -1,0 +1,32 @@
+# Two example alert rules, written against the span metrics the Collector makes. They show in
+# Prometheus (http://localhost:9090/alerts). Wiring them to Alertmanager is left out on purpose.
+groups:
+  - name: dovetalk-api
+    rules:
+      - alert: ApiErrorRateHigh
+        # More than 5% of server spans failed (a 5xx) over 5 minutes, with real traffic.
+        expr: |
+          (
+            sum(rate(traces_span_metrics_calls_total{service_name="dovetalk-api", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[5m]))
+            /
+            sum(rate(traces_span_metrics_calls_total{service_name="dovetalk-api", span_kind="SPAN_KIND_SERVER"}[5m]))
+          ) > 0.05
+          and
+          sum(rate(traces_span_metrics_calls_total{service_name="dovetalk-api", span_kind="SPAN_KIND_SERVER"}[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "More than 5% of API requests are failing"
+      - alert: ApiLatencyP95High
+        # p95 of server spans above 500 ms for 10 minutes.
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name="dovetalk-api", span_kind="SPAN_KIND_SERVER"}[5m]))
+          ) > 500
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "API p95 latency is above 500 ms"

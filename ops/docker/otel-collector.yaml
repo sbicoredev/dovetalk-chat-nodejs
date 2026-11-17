@@ -1,0 +1,82 @@
+# OpenTelemetry Collector (contrib distribution). The API and the worker send OTLP here; it fans
+# out to Tempo (traces), Prometheus (metrics) and Loki (logs).
+#
+# It also turns server spans into RED metrics (`traces_span_metrics_*`) with exemplars. The JS
+# metrics SDK cannot attach exemplars itself, so this is what lets a latency spike on the API
+# dashboard link to a trace. See docs/observability.md.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
+  batch:
+    timeout: 2s
+  # Resource attributes become labels on every metric series. These ones say nothing a dashboard
+  # needs and make the label set long, so they are dropped from metrics (traces and logs keep them).
+  resource/trim:
+    attributes:
+      - {key: process.command, action: delete}
+      - {key: process.command_args, action: delete}
+      - {key: process.executable.path, action: delete}
+      - {key: process.executable.name, action: delete}
+      - {key: process.owner, action: delete}
+      - {key: process.pid, action: delete}
+      - {key: process.runtime.description, action: delete}
+      - {key: host.id, action: delete}
+      - {key: host.arch, action: delete}
+      - {key: os.version, action: delete}
+
+connectors:
+  spanmetrics:
+    namespace: traces.span.metrics
+    metrics_flush_interval: 10s
+    exemplars:
+      enabled: true
+    histogram:
+      explicit:
+        buckets: [2ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]
+    dimensions:
+      - name: http.route
+      - name: http.request.method
+      - name: http.response.status_code
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    tls:
+      insecure: true
+    # Makes service.name, service.instance.id and deployment.environment labels on every series.
+    resource_to_telemetry_conversion:
+      enabled: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+
+service:
+  telemetry:
+    metrics:
+      level: none
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/tempo, spanmetrics]
+    metrics:
+      receivers: [otlp, spanmetrics]
+      processors: [memory_limiter, resource/trim, batch]
+      exporters: [prometheusremotewrite]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/loki]

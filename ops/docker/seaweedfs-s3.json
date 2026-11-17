@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "dovetalk",
+      "credentials": [{ "accessKey": "dovetalk", "secretKey": "dovetalk-secret" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

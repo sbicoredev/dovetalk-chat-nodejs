@@ -1,0 +1,16 @@
+# Prometheus takes metrics by remote write from the Collector (so no scrape of the apps), and
+# scrapes the two exporters for Postgres and Redis itself.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]

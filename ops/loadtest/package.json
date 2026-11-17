@@ -1,0 +1,22 @@
+{
+  "name": "@dovetalk/loadtest",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Load tests for Dovetalk: provisioning, a WebSocket fan-out harness, a k6 REST scenario and a chaos hook.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "provision": "node src/provision.ts",
+    "fanout": "node src/ws-fanout.ts",
+    "lb": "node native/lb.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@dovetalk/contracts": "workspace:*",
+    "socket.io-client": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6"
+  }
+}
