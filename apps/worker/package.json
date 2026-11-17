@@ -1,0 +1,44 @@
+{
+  "name": "@dovetalk/worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Dovetalk background worker: bot replies and cleanup jobs.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "pnpm -r --filter \"@dovetalk/worker^...\" build && node --watch --env-file-if-exists=.env --import ./dist/instrumentation.js dist/main.js",
+    "start": "node --import ./dist/instrumentation.js dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary --coverage.include=src/**"
+  },
+  "dependencies": {
+    "@dovetalk/contracts": "workspace:*",
+    "@dovetalk/core": "workspace:*",
+    "@dovetalk/db": "workspace:*",
+    "@dovetalk/telemetry": "workspace:*",
+    "@nestjs/common": "^12.5.0",
+    "@nestjs/core": "^12.5.0",
+    "bullmq": "^6.7.6",
+    "drizzle-orm": "^0.45.4",
+    "ioredis": "^6.0.0",
+    "nestjs-pino": "^5.3.1",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@dovetalk/testkit": "workspace:*",
+    "@nestjs/testing": "^12.5.0",
+    "@types/node": "^26.6.6",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "pino-pretty": "latest",
+    "vitest": "^5.1.0"
+  }
+}
