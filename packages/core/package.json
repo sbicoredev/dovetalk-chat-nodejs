@@ -1,0 +1,61 @@
+{
+  "name": "@dovetalk/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Domain services and infrastructure shared by the API and the worker.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@dovetalk/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary --coverage.include=src/**"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1169.0",
+    "@aws-sdk/s3-request-presigner": "3.1169.0",
+    "@dovetalk/contracts": "workspace:*",
+    "@dovetalk/db": "workspace:*",
+    "@dovetalk/telemetry": "workspace:*",
+    "@socket.io/redis-emitter": "5.1.0",
+    "bullmq": "^6.7.6",
+    "drizzle-orm": "^0.45.4",
+    "file-type": "^22.3.0",
+    "ioredis": "^6.0.0",
+    "nestjs-pino": "^5.3.1",
+    "pino": "^10.4.0",
+    "pino-http": "^11.0.0",
+    "uuid": "^14.0.3",
+    "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "@nestjs/common": "^12.0.0",
+    "@nestjs/core": "^12.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@dovetalk/testkit": "workspace:*",
+    "@nestjs/common": "^12.5.0",
+    "@nestjs/core": "^12.5.0",
+    "@nestjs/platform-express": "^12.5.0",
+    "@nestjs/testing": "^12.5.0",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "vitest": "^5.1.0"
+  }
+}
