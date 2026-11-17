@@ -1,0 +1,92 @@
+{
+  "label": "chaos: SIGKILL API 2 of 3, 2000 sockets via LB",
+  "runId": "fa63654c",
+  "finishedAt": "2026-11-17T05:10:36.255Z",
+  "host": {
+    "cpus": 2,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+    "memoryGb": 7.8,
+    "node": "v26.13.1",
+    "platform": "linux 6.18.44-fc-v553"
+  },
+  "config": {
+    "mode": "load-balancer",
+    "target": "http://127.0.0.1:8080",
+    "pairs": 1000,
+    "sockets": 2000,
+    "durationS": 40,
+    "ratePerPair": 0.1,
+    "chaosCmd": "/home/claude/work/dovetalk/ops/loadtest/native/stack.sh kill-api 2",
+    "chaosAtS": 15
+  },
+  "sockets": {
+    "connected": 2000,
+    "failedToConnect": 0,
+    "connectErrors": 1,
+    "stillDownAtEnd": 0
+  },
+  "messages": {
+    "sent": 4000,
+    "receivedLive": 3971,
+    "lostLive": 29,
+    "recoveredByResync": 29,
+    "lostAfterResync": 0,
+    "duplicates": 0,
+    "echoMissingOnSenderSocket": 28,
+    "echoDuplicates": 0,
+    "sendsFailedForGood": 0,
+    "sendRetries": 1,
+    "throughputPerS": 100
+  },
+  "latencyMs": {
+    "sendToReceive": {
+      "count": 3971,
+      "min": 5.1,
+      "p50": 13.1,
+      "p95": 711,
+      "p99": 1448.8,
+      "max": 2149.5
+    },
+    "postRoundTrip": {
+      "count": 4000,
+      "min": 3.7,
+      "p50": 9.5,
+      "p95": 293.7,
+      "p99": 668.8,
+      "max": 1137.6
+    }
+  },
+  "recovery": {
+    "chaosOutput": "Killed API instance 2.",
+    "clientsReconnected": 666,
+    "reconnectMs": {
+      "count": 666,
+      "min": 298.7,
+      "p50": 1193.3,
+      "p95": 1421.2,
+      "p99": 1494.1,
+      "max": 3011.7
+    },
+    "resyncMs": {
+      "count": 666,
+      "min": 31.5,
+      "p50": 1495.3,
+      "p95": 2592.8,
+      "p99": 2683.3,
+      "max": 2700.6
+    },
+    "allBackMs": 4000
+  },
+  "memory": {
+    "clientKbPerSocket": 41.5,
+    "serverKbPerSocket": null,
+    "serverMbBefore": null,
+    "serverMbAfter": null
+  },
+  "serverCpu": null,
+  "harnessEventLoopLagMs": {
+    "p50": 10.1,
+    "p99": 12.9,
+    "max": 243.3
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "label": "3 API native, 3000 sockets",
+  "runId": "73231ac1",
+  "finishedAt": "2026-11-17T05:05:20.965Z",
+  "host": {
+    "cpus": 2,
+    "cpuModel": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+    "memoryGb": 7.8,
+    "node": "v26.13.1",
+    "platform": "linux 6.18.44-fc-v553"
+  },
+  "config": {
+    "mode": "direct-to-instances",
+    "target": ["http://127.0.0.1:3101", "http://127.0.0.1:3102", "http://127.0.0.1:3103"],
+    "pairs": 1500,
+    "sockets": 3000,
+    "durationS": 40,
+    "ratePerPair": 0.05,
+    "chaosCmd": null,
+    "chaosAtS": null
+  },
+  "sockets": {
+    "connected": 3000,
+    "failedToConnect": 0,
+    "connectErrors": 0,
+    "stillDownAtEnd": 0
+  },
+  "messages": {
+    "sent": 3000,
+    "receivedLive": 3000,
+    "lostLive": 0,
+    "recoveredByResync": 0,
+    "lostAfterResync": 0,
+    "duplicates": 0,
+    "echoMissingOnSenderSocket": 0,
+    "echoDuplicates": 0,
+    "sendsFailedForGood": 0,
+    "sendRetries": 0,
+    "throughputPerS": 75
+  },
+  "latencyMs": {
+    "sendToReceive": {
+      "count": 3000,
+      "min": 5.4,
+      "p50": 10.8,
+      "p95": 25.3,
+      "p99": 47.4,
+      "max": 135.6
+    },
+    "postRoundTrip": {
+      "count": 3000,
+      "min": 3.9,
+      "p50": 7.8,
+      "p95": 18.6,
+      "p99": 40.4,
+      "max": 121.7
+    }
+  },
+  "recovery": null,
+  "memory": {
+    "clientKbPerSocket": 32.6,
+    "serverKbPerSocket": -11.5,
+    "serverMbBefore": 896,
+    "serverMbAfter": 862
+  },
+  "serverCpu": {
+    "secondsDuringSend": 17.2,
+    "msPerMessage": 5.72
+  },
+  "harnessEventLoopLagMs": {
+    "p50": 10.1,
+    "p99": 12.7,
+    "max": 156.1
+  }
+}
