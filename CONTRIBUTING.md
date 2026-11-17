@@ -93,6 +93,17 @@ docs: add an ADR for per-viewer projection
 Keep each commit building and passing the tests that existed at that point, and do not mix a refactor with a
 feature. The changelog is generated from these messages, so the subject should say what changed for a reader.
 
+## Releases
+
+Releases are automated by [release-please](https://github.com/googleapis/release-please). On every push to `main`
+it reads the Conventional Commit messages and keeps one pull request open that bumps the version in
+`package.json` and adds the new entries to [CHANGELOG.md](CHANGELOG.md). Merging that pull request creates the
+tag and the GitHub release. `feat` raises the minor version, `fix` and `perf` the patch version, and a `!` or a
+`BREAKING CHANGE:` footer the major version.
+
+The first release is pinned to `1.0.0` by `release-as` in `release-please-config.json`. **Remove that line after
+`v1.0.0` is out**, or every later release will try to stay at 1.0.0.
+
 ## Pull requests
 
 Branch from `main`, keep the pull request to one change, and rebase on `main` before asking for review. The

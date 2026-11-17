@@ -53,6 +53,22 @@ API through Redis and the worker to the database.
 - **One conformance suite** runs against both the mock and the real API, so they cannot drift apart.
   [ADR 0007](docs/adr/0007-one-conformance-suite-for-both-backends.md)
 
+## Tech stack
+
+| Area               | Choice                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| Language           | TypeScript (strict), Node 26, pnpm workspaces                                           |
+| API                | NestJS, REST with an OpenAPI document, socket.io (WebSocket only)                       |
+| Background work    | A NestJS standalone worker with BullMQ queues and repeatable jobs                       |
+| Data               | PostgreSQL with Drizzle ORM and SQL migrations in git                                   |
+| Cache and messaging | Redis: socket.io adapter, presence, rate limits, job queues                            |
+| Files              | S3-compatible storage (SeaweedFS locally, any S3 service in production), signed URLs   |
+| Web client         | Next.js, React, TanStack Query, Zustand, Tailwind                                       |
+| Observability      | OpenTelemetry, Collector, Tempo, Prometheus, Loki, Grafana (dashboards generated as code) |
+| Testing            | Vitest, Testcontainers, Playwright, k6, a conformance suite shared by the mock and the API |
+| Tooling            | Biome through Ultracite, dependency-cruiser, Husky, commitlint, Renovate, release-please |
+| Delivery           | Docker Compose profiles, nginx, GitHub Actions                                          |
+
 ## Architecture
 
 ```mermaid
