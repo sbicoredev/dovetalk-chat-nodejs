@@ -14,6 +14,16 @@ permissions:
 
 env:
   HUSKY: "0"
+  TURBO_TELEMETRY_DISABLED: "1"
+  # Optional shared cache between runs and machines. Without these the local cache from the
+  # setup action is used. Set TURBO_TOKEN as a secret and TURBO_TEAM as a variable to enable it.
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  # On a pull request only the packages the change touches (and what depends on them) are checked
+  # and tested. A push to main runs everything, and ignores cached test results: they would not
+  # notice a new Postgres, Redis or S3 image, which the tests depend on.
+  TURBO_SCOPE: ${{ github.event_name == 'pull_request' && '--affected' || '' }}
+  TURBO_TEST_SCOPE: ${{ github.event_name == 'pull_request' && '--affected' || '--force' }}
 
 jobs:
   checks:
@@ -21,20 +31,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install pnpm
-        run: npm install --global pnpm@12.21.0
-      - uses: actions/setup-node@v7
         with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Biome resolves "@dovetalk/*" imports through each package's dist/, which tsc and Vitest
-      # do not need (they use the "@dovetalk/source" condition). Without a build, the
-      # noUnresolvedImports rule reports every workspace import as an error.
-      - run: pnpm --filter "./packages/*" build
+          # --affected compares with the base branch, so it needs history.
+          fetch-depth: 0
+      - uses: ./.github/actions/setup
+      # Biome and dependency-cruiser, as Turborepo tasks (cached). Biome resolves "@dovetalk/*"
+      # imports through each package's dist/, so the lint task builds the packages first.
       - run: pnpm lint
-      - run: pnpm lint:boundaries
-      - run: pnpm typecheck
+      - run: pnpm typecheck $TURBO_SCOPE
 
   test:
     # Includes the socket tests and the two-instance tests (two API apps sharing this Redis):
@@ -67,6 +71,8 @@ jobs:
       S3_IMAGE: chrislusf/seaweedfs:3.99
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Start SeaweedFS (S3)
         # The two flags are needed: every bucket takes 7 volumes and the default cap is 8, so a
         # few test buckets end in "Not enough data nodes found" (docs/edge-cases.md, #55).
@@ -82,15 +88,9 @@ jobs:
           done
           docker logs s3
           exit 1
-      - name: Install pnpm
-        run: npm install --global pnpm@12.21.0
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
       - name: Run the tests with coverage
-        run: pnpm test:coverage
+        run: pnpm test:coverage $TURBO_TEST_SCOPE
       # The load-test package uses Node's own test runner, so it is outside the coverage run.
       - name: Run the load-test package's tests
         run: pnpm --filter @dovetalk/loadtest test
@@ -151,13 +151,9 @@ jobs:
           docker compose ps --all
           docker compose logs --no-color worker
           exit 1
-      - name: Install pnpm
-        run: npm install --global pnpm@12.21.0
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/setup
         with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter "@dovetalk/web..."
+          install-args: '--filter "@dovetalk/web..."'
       - name: Run the conformance suite against the API
         run: pnpm --filter @dovetalk/web test:conformance
         env:
@@ -200,13 +196,9 @@ jobs:
           docker compose ps --all
           docker compose logs --no-color
           exit 1
-      - name: Install pnpm
-        run: npm install --global pnpm@12.21.0
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/setup
         with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter "@dovetalk/web..."
+          install-args: '--filter "@dovetalk/web..."'
       - run: pnpm --filter @dovetalk/web exec playwright install --with-deps chromium
       - name: Run the end-to-end tests
         run: pnpm --filter @dovetalk/web test:e2e
@@ -279,13 +271,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install pnpm
-        run: npm install --global pnpm@12.21.0
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/setup
         with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter dovetalk
+          install-args: "--filter dovetalk"
       - name: The ER diagram matches the schema
         run: node ops/scripts/gen-er-diagram.mjs --check
       - name: Every Mermaid diagram parses
@@ -346,13 +334,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install pnpm
-        run: npm install --global pnpm@12.21.0
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
       - run: pnpm build
       - uses: docker/setup-buildx-action@v4
       - name: Build the API image

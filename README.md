@@ -57,7 +57,7 @@ API through Redis and the worker to the database.
 
 | Area               | Choice                                                                                  |
 | ------------------ | --------------------------------------------------------------------------------------- |
-| Language           | TypeScript (strict), Node 26, pnpm workspaces                                           |
+| Language           | TypeScript (strict), Node 26, pnpm workspaces + Turborepo                               |
 | API                | NestJS, REST with an OpenAPI document, socket.io (WebSocket only)                       |
 | Background work    | A NestJS standalone worker with BullMQ queues and repeatable jobs                       |
 | Data               | PostgreSQL with Drizzle ORM and SQL migrations in git                                   |
@@ -163,19 +163,24 @@ Needs Node 26, pnpm 12 and Docker (for the services only). Details, the checks a
 ```bash
 npm install --global pnpm@12.21.0
 pnpm install
-cp .env.example .env
-docker compose up -d            # Postgres, Redis, S3-compatible storage
-cp apps/api/.env.example apps/api/.env
-cp apps/worker/.env.example apps/worker/.env
-pnpm db:migrate                      # creates the tables
-pnpm db:seed                         # creates demo@dovetalk.app / dovetalk123
-pnpm build
-pnpm --filter @dovetalk/api dev      # http://localhost:3001/docs
-pnpm --filter @dovetalk/worker dev   # health on :3002
-pnpm --filter @dovetalk/web dev      # http://localhost:3000, mock mode
+pnpm dev     # env files, Postgres/Redis/S3 from images (no Docker build), migrations, seed, then API, worker and web
 ```
 
-That last command runs the web app on its mock server. To run it against the API you just started, copy
+The API is at <http://localhost:3001/docs> and the web app at <http://localhost:3000>, where you can sign in as
+`demo@dovetalk.app` / `dovetalk123`. Packages recompile on save and the Node apps restart; nothing is built into an
+image. Options (`--no-infra`, `--skip-migrate`, `--seed`, `--mock-web`) are in [CONTRIBUTING.md](CONTRIBUTING.md#set-up).
+
+To start things yourself instead:
+
+```bash
+cp .env.example .env && docker compose up -d      # Postgres, Redis, S3-compatible storage (pulled, not built)
+cp apps/api/.env.example apps/api/.env
+cp apps/worker/.env.example apps/worker/.env
+pnpm db:migrate && pnpm db:seed
+pnpm dev:apps                                     # API, worker and web, recompiling on save
+```
+
+Without an `apps/web/.env.local` the web app runs on its mock server (`pnpm dev` makes that file for you). To point it at the API yourself, copy
 `apps/web/.env.example` to `apps/web/.env.local` and set the three addresses, then restart it:
 
 ```bash

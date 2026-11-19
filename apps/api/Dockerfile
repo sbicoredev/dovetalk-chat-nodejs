@@ -4,21 +4,28 @@
 ARG NODE_VERSION=26
 
 FROM node:${NODE_VERSION}-slim AS base
-ENV PNPM_HOME=/pnpm HUSKY=0
+ENV PNPM_HOME=/pnpm HUSKY=0 TURBO_TELEMETRY_DISABLED=1
 ENV PATH=$PNPM_HOME:$PATH
-# Keep in step with "packageManager" in the root package.json.
-RUN npm install --global pnpm@12.21.0
+# Keep in step with "packageManager" and the "turbo" devDependency in the root package.json.
+RUN npm install --global pnpm@12.21.0 turbo@2.11.12
 WORKDIR /repo
+
+# Cuts the monorepo down to this app and the packages it uses. out/json holds only the package.json
+# files and the lockfile, so the install layer below is rebuilt only when dependencies change.
+FROM base AS prune
+COPY . .
+RUN turbo prune @dovetalk/api --docker
 
 FROM base AS build
 # Fetching first keeps this layer cached until the lockfile changes.
-COPY pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store pnpm fetch
-COPY . .
+COPY --from=prune /repo/out/json/ ./
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --offline --filter "@dovetalk/api..."
+    pnpm install --frozen-lockfile --filter "@dovetalk/api..."
+COPY --from=prune /repo/out/full/ ./
+# turbo prune leaves out the root tsconfig that every package extends.
+COPY tsconfig.base.json ./
 # Builds the shared packages first, then the app.
-RUN pnpm --filter "@dovetalk/api..." build
+RUN turbo run build --filter=@dovetalk/api
 # A self-contained folder: compiled app, compiled workspace packages, production dependencies only.
 RUN pnpm --filter @dovetalk/api deploy --prod /out
 

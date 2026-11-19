@@ -58,7 +58,7 @@ A working register. Each item says what could go wrong, what we do about it, and
 | --- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | 35 | The MinIO community edition no longer ships images.                                                             | Replaced by SeaweedFS in Compose. See ADR 0005.                                                                             |
 | 36 | Uploads through the Next `/api` rewrite may hit a body size limit, and Vercel limits request bodies on its own. | Test a 10 MB upload through the web app's proxy and on a hosted deployment. The fallback is signed direct-to-storage uploads, which is a contract change.   |
-| 37 | The build sandbox has no Docker daemon, so Dockerfiles and Compose could only be checked statically here.       | The Dockerfile steps were replayed natively (`pnpm fetch`, frozen install, build, deploy, then boot). CI builds the images. |
+| 37 | The build sandbox has no Docker daemon, so Dockerfiles and Compose could only be checked statically here.       | The Dockerfile steps were replayed natively (`turbo prune`, frozen install, `turbo run build`, deploy, then boot). CI builds the images. |
 
 ## Contacts and chats
 

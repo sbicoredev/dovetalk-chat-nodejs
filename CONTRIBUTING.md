@@ -12,26 +12,31 @@ store only; the apps run on your machine.
 nvm use                                  # Node 26
 npm install --global pnpm@12.21.0
 pnpm install
-cp .env.example .env
-docker compose up -d                     # Postgres, Redis, S3-compatible storage
-cp apps/api/.env.example apps/api/.env
-cp apps/worker/.env.example apps/worker/.env
-pnpm db:migrate && pnpm db:seed          # tables, then demo@dovetalk.app / dovetalk123
-pnpm build
-pnpm --filter @dovetalk/api dev          # http://localhost:3001/docs
-pnpm --filter @dovetalk/worker dev       # bot replies and cleanup jobs
-pnpm --filter @dovetalk/web dev          # http://localhost:3000, on the mock server by default
+pnpm dev
 ```
 
-To run the web app against the API you just started, and for the one-command Compose stack, see the
-[README](README.md#quick-start).
+`pnpm dev` is the whole loop, and it builds no Docker image:
+
+1. It makes `.env`, `apps/api/.env`, `apps/worker/.env` and `apps/web/.env.local` from their examples if they are
+   missing (it never overwrites one), with the API settings the web app's `/api` proxy needs.
+2. It starts Postgres, Redis and S3-compatible storage from their published images.
+3. It applies the migrations, and seeds `demo@dovetalk.app` / `dovetalk123` the first time.
+4. It runs the API (<http://localhost:3001/docs>), the worker and the web app (<http://localhost:3000>). The packages
+   recompile as you save (`tsc --watch`) and the Node apps restart on the new output; the web app hot-reloads.
+
+Flags: `pnpm dev --no-infra` (you run Postgres, Redis and S3 yourself), `--skip-migrate`, `--seed`, and `--mock-web`
+(leave the web app on its in-browser mock server). `pnpm dev:infra` and `pnpm dev:down` start and stop the three
+services alone, and `pnpm dev:apps` runs only the apps.
+
+The Compose `app` profile builds the three Dockerfiles. It is for checking the images and for running the
+conformance and end-to-end suites, not for everyday work.
 
 ## Checks
 
 A change is ready when all of these pass. CI runs the same ones.
 
 ```bash
-pnpm lint                # Biome: lint, format and import order
+pnpm lint                # Biome (lint, format, import order) and the dependency boundaries
 pnpm typecheck
 pnpm lint:boundaries     # the API and the worker must not import each other
 pnpm test                # unit and integration tests
@@ -118,3 +123,16 @@ description says what changed and why, how to test it, and what you did **not** 
 Open issues labelled `good first issue` or `help wanted` are listed in [docs/roadmap.md](docs/roadmap.md).
 By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go through
 [SECURITY.md](SECURITY.md), not a public issue.
+
+## Turborepo
+
+`build`, `typecheck`, `test`, `test:coverage` and `lint` run through [Turborepo](https://turbo.build) (`turbo.json`,
+[ADR 0018](docs/adr/0018-turborepo.md)): tasks run in dependency order, in parallel, and their results are cached in
+`.turbo/`. A second `pnpm build` or `pnpm lint` with nothing edited is instant.
+
+- One package: `pnpm turbo run test --filter=@dovetalk/core` (add `...` after the name to include its dependencies).
+- Only what your branch touched: `pnpm turbo run typecheck test --affected`. CI does this on pull requests.
+- Skip the cache for one run: add `--force`.
+- Environment variables are strict: a task sees only the variables `turbo.json` declares. If you make code read a new
+  variable, add it there (`env` when it changes the output, `passThroughEnv` when it only configures the run).
+- Share the cache across machines by setting `TURBO_TOKEN` and `TURBO_TEAM`; CI uses them when they exist.

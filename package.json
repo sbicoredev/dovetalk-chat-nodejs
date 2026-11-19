@@ -9,16 +9,21 @@
     "node": ">=26"
   },
   "scripts": {
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
-    "test:coverage": "pnpm -r --workspace-concurrency=1 --if-present test:coverage",
-    "lint": "biome check .",
+    "build": "turbo run build",
+    "dev": "node ops/scripts/dev.mjs",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage --concurrency=1",
+    "lint": "turbo run //#lint:biome //#lint:boundaries",
     "format": "biome check --write .",
     "prepare": "husky",
     "lint:boundaries": "depcruise apps packages ops/loadtest --config .dependency-cruiser.cjs",
-    "build": "pnpm -r build",
-    "db:migrate": "pnpm -r --filter \"@dovetalk/db...\" build && node --env-file-if-exists=apps/api/.env packages/db/dist/migrate-cli.js",
-    "db:seed": "pnpm --filter @dovetalk/api db:seed"
+    "db:migrate": "turbo run build --filter=@dovetalk/db && node --env-file-if-exists=apps/api/.env packages/db/dist/migrate-cli.js",
+    "db:seed": "turbo run db:seed --filter=@dovetalk/api",
+    "lint:biome": "biome check .",
+    "dev:apps": "turbo run dev build:watch --concurrency=20",
+    "dev:infra": "docker compose up -d --wait postgres redis s3",
+    "dev:down": "docker compose stop postgres redis s3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.7",
@@ -34,6 +39,7 @@
     "jsdom": "^31.0.1",
     "lint-staged": "^17.6.1",
     "mermaid": "^12.3.0",
+    "turbo": "^2.11.12",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "ultracite": "8.2.0"
   }

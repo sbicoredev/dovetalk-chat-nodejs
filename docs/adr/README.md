@@ -23,6 +23,7 @@ old records are not rewritten.
 | [0015](0015-cursor-paging-over-offset.md)              | Cursor paging on the chat's sequence number                   |
 | [0016](0016-refresh-token-rotation.md)                 | Short access tokens, rotating refresh tokens in a cookie      |
 | [0017](0017-blocking-semantics.md)                     | What blocking does                                            |
+| [0018](0018-turborepo.md)                              | Turborepo for tasks, caching and Docker builds                |
 
 The diagrams that show how these fit together are in [docs/architecture.md](../architecture.md). Gaps and
 judgement calls found while building are in [docs/edge-cases.md](../edge-cases.md).

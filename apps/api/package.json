@@ -10,9 +10,10 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "pnpm -r --filter \"@dovetalk/api^...\" build && node --watch --env-file-if-exists=.env --import ./dist/instrumentation.js dist/main.js",
+    "build:watch": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "dev": "node --watch --env-file-if-exists=.env --import ./dist/instrumentation.js dist/main.js",
     "start": "node --import ./dist/instrumentation.js dist/main.js",
-    "db:seed": "pnpm -r --filter \"@dovetalk/api^...\" build && pnpm build && node --env-file-if-exists=.env dist/cli/seed.js",
+    "db:seed": "node --env-file-if-exists=.env dist/cli/seed.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text-summary --coverage.include=src/**"

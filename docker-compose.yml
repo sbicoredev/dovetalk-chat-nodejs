@@ -104,7 +104,7 @@ x-api-environment: &api-environment
 
 services:
   postgres:
-    image: postgres:18
+    image: postgres:18.4-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-dovetalk}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dovetalk}
@@ -121,7 +121,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:8
+    image: redis:8.8-alpine
     # BullMQ needs noeviction: evicting a queue key would silently drop jobs.
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:
@@ -137,7 +137,7 @@ services:
   # MinIO's community edition stopped shipping images in 2025, so local object storage is
   # SeaweedFS, which speaks the S3 API with signed URLs. See docs/adr/0005-dependency-policy.md.
   s3:
-    image: ${S3_IMAGE:?Set S3_IMAGE in .env, see .env.example}
+    image: ${S3_IMAGE:-chrislusf/seaweedfs:4.54}
     # Every bucket takes 7 volumes and the default cap is 8. The flags give room for more buckets
     # and keep volumes small (docs/edge-cases.md, #55).
     command:

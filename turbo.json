@@ -1,0 +1,86 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "envMode": "strict",
+  "globalDependencies": ["tsconfig.base.json", ".nvmrc"],
+  "globalPassThroughEnv": [
+    "CI",
+    "TZ",
+    "NO_COLOR",
+    "FORCE_COLOR",
+    "NODE_OPTIONS",
+    "DOCKER_HOST",
+    "DOCKER_CONFIG",
+    "DOCKER_CERT_PATH",
+    "DOCKER_TLS_VERIFY",
+    "TESTCONTAINERS_*",
+    "NEXT_TELEMETRY_DISABLED"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", "!**/*.test.ts", "!test/**", "!coverage/**"],
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "env": ["TEST_*"]
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "env": ["TEST_*"],
+      "outputs": ["coverage/**"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["*"]
+    },
+    "db:seed": {
+      "dependsOn": ["^build", "build"],
+      "cache": false,
+      "passThroughEnv": ["*"]
+    },
+    "//#lint:biome": {
+      "dependsOn": [
+        "@dovetalk/contracts#build",
+        "@dovetalk/db#build",
+        "@dovetalk/core#build",
+        "@dovetalk/telemetry#build"
+      ],
+      "inputs": [
+        "**/*.{ts,tsx,js,mjs,cjs,mts,cts,json,jsonc,css,yaml,yml}",
+        "biome.jsonc",
+        "!**/node_modules/**",
+        "!**/dist/**",
+        "!**/.next/**",
+        "!**/coverage/**",
+        "!**/.turbo/**",
+        "!pnpm-lock.yaml"
+      ],
+      "outputs": []
+    },
+    "//#lint:boundaries": {
+      "inputs": [
+        "apps/**/*.{ts,tsx}",
+        "packages/**/*.ts",
+        "ops/loadtest/**/*.ts",
+        ".dependency-cruiser.cjs",
+        "**/package.json",
+        "!**/node_modules/**",
+        "!**/dist/**",
+        "!**/.next/**"
+      ],
+      "outputs": []
+    },
+    "build:watch": {
+      "dependsOn": ["^build", "build"],
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

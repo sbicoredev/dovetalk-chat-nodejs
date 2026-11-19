@@ -10,7 +10,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "pnpm -r --filter \"@dovetalk/worker^...\" build && node --watch --env-file-if-exists=.env --import ./dist/instrumentation.js dist/main.js",
+    "build:watch": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "dev": "node --watch --env-file-if-exists=.env --import ./dist/instrumentation.js dist/main.js",
     "start": "node --import ./dist/instrumentation.js dist/main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

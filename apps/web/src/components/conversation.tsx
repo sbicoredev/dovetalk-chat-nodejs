@@ -124,6 +124,7 @@ function ConversationBody({ id }: { id: string }) {
   loadEarlierRef.current = loadEarlier;
 
   // Scrolling to the top loads the next page of older messages.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: hasNextPage and history.isPending are triggers, not values read here: the observer must be set up again once the top sentinel exists or disappears.
   useEffect(() => {
     const target = topRef.current;
     const root = scrollerRef.current;
@@ -144,6 +145,7 @@ function ConversationBody({ id }: { id: string }) {
 
   // After older messages are added above, put the view back where it was.
   const oldestId = messages[0]?.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: oldestId is the trigger: a new oldest message means a page was prepended.
   useLayoutEffect(() => {
     const saved = beforePrepend.current;
     const el = scrollerRef.current;
@@ -184,6 +186,7 @@ function ConversationBody({ id }: { id: string }) {
 
   // Go to the bottom for new messages only, not when older ones load above.
   const lastId = messages.at(-1)?.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: lastId, typingName and id are triggers: scroll to the bottom for a new last message, a typing line or another chat.
   useEffect(() => {
     if (searching) {
       return;

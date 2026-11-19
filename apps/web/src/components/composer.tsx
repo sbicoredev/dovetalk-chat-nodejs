@@ -48,6 +48,12 @@ interface Props {
   reply: ReplyDraft | null;
 }
 
+// Grows the box with its content, up to 140 px. Pure, so it lives outside the component.
+function resize(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+}
+
 export function Composer({ chatId, reply, onCancelReply, editing, onCancelEdit }: Props) {
   const me = useMe();
   const realtime = useRealtime();
@@ -65,11 +71,6 @@ export function Composer({ chatId, reply, onCancelReply, editing, onCancelEdit }
   const [seconds, setSeconds] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  const resize = (el: HTMLTextAreaElement) => {
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
-  };
 
   useEffect(() => {
     if (!recording) {
